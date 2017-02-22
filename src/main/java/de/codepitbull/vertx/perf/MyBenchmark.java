@@ -31,32 +31,77 @@
 
 package de.codepitbull.vertx.perf;
 
+import de.codepitbull.vertx.perf.baseline.SimpleChoosable;
 import de.codepitbull.vertx.perf.hazelcast.ChoosableSet;
+import de.codepitbull.vertx.perf.others.CASChoosable;
+import de.codepitbull.vertx.perf.others.CASOptChoosable;
+import io.vertx.core.spi.cluster.ChoosableIterable;
 import io.vertx.spi.cluster.jgroups.impl.domain.ChoosableArrayListImpl;
 import org.openjdk.jmh.annotations.*;
+import org.openjdk.jmh.infra.Blackhole;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @BenchmarkMode(Mode.Throughput)
+@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
+@Threads(4)
+@Fork(value = 1, jvmArgs = { "-XX:+UseBiasedLocking", "-XX:BiasedLockingStartupDelay=0", "-XX:+AggressiveOpts"})
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Benchmark)
 public class MyBenchmark {
 
-    ChoosableSet<String> choosableSet = new ChoosableSet<String>(10);
+    @Param({"1", "10", "100"})
+    public int size;
 
-    ChoosableArrayListImpl<String> list = new ChoosableArrayListImpl<>();
+    ChoosableIterable<String> baselineChoosable;
+    ChoosableIterable<String> hazelcastChoosable;
+    ChoosableIterable<String> jgroupsChoosable;
+    ChoosableIterable<String> casChoosable;
+    ChoosableIterable<String> casBackoffChoosable;
 
     @Setup
-    public void setup() {
-        choosableSet.add("test");
-        list.add("test");
+    public void setup(Blackhole blackhole) {
+        List<String> list = new ArrayList<>();
+        ChoosableSet<String> hazelcast = new ChoosableSet<>(10);
+        ChoosableArrayListImpl<String> jgroups = new ChoosableArrayListImpl<>();
+        for (int i = 0;i < size;i++) {
+            String elt = "element-" + i;
+            hazelcast.add(elt);
+            jgroups.add(elt);
+            list.add(elt);
+        }
+        this.hazelcastChoosable = hazelcast;
+        this.jgroupsChoosable = jgroups;
+        this.baselineChoosable = new SimpleChoosable<>("element");
+        this.casChoosable = new CASChoosable<>(list);
+        this.casBackoffChoosable = new CASOptChoosable<>(list);
     }
 
     @Benchmark
-    public void testSet() {
-        choosableSet.choose();
+    public void baselineChoosable(Blackhole blackhole) {
+        blackhole.consume(baselineChoosable.choose());
     }
 
     @Benchmark
-    public void testList() {
-        list.choose();
+    public void hazelcastChoosable(Blackhole blackhole) {
+        blackhole.consume(hazelcastChoosable.choose());
     }
 
+    @Benchmark
+    public void jgroupsChoosable(Blackhole blackhole) {
+        blackhole.consume(jgroupsChoosable.choose());
+    }
+
+    @Benchmark
+    public void casChoosable(Blackhole blackhole) {
+        blackhole.consume(casChoosable.choose());
+    }
+
+    @Benchmark
+    public void casBackoffChoosable(Blackhole blackhole) {
+        blackhole.consume(casBackoffChoosable.choose());
+    }
 }
